@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Twitter Sentiment Rating</title>
+    {{
+    response.files.append(URL('static','sentiment/css/bootstrap.min.css'))
+    response.files.append(URL('static','sentiment/css/custom.css'))
+    response.include_meta()
+    response.include_files()
+    }}
+  </head>
+  <body>
+    {{if request.preview:}}
+    <div class="container">
+        <div class="preview-banner alert alert-block">
+            You are currently in preview mode. Accept the HIT to start working.
+        </div>
+    </div>
+    {{pass}}
+    
+    <div class="content">
+		<h2 align="center">Twitter Sentiment Rating</h2>
+		
+        <div class="payment">
+        {{if request.preview: }}
+            Pays in bonus
+        {{else:}}
+            Pays ${{=request.price}} in bonus
+        {{pass}}
+        </div>
+        
+		<h3>Instructions</h3>
+		<p>Read each tweet below carefully and rate the overall sentiment, emotion, or feeling.</p>
+        <p>If the tweet is in an unfamiliar language, please try to use <a target="_blank" href="http://translate.google.com">Google Translate</a>.</p>
+        <p>If you are completely unsure whether the tweet is positive, neutral, or negative, you may skip it.</p>
+		<p>Your answers will be validated against your peers. 
+           If you skip too many tweets or do not answer consistently enough, you will be blocked.</p>
+		
+        {{if error:}}
+            <div class="alert alert-danger">{{=error}}</div>
+        {{pass}}
+        
+		<h3>Tweets</h3>
+        
+        <form class="form-inline" action="" method="post" enctype="multipart/form-data">
+        {{for tweet in tweets:}}
+            <div class="twitter-unit">
+                <p>{{=tweet['text']}}</p>
+                <div class="translate-link">
+                    <a target="mturk-hit-translate" href="http://translate.google.com/?source=osdd#auto|auto|{{=tweet['text']}}">
+                        Translate with Google Translate
+                    </a>
+                </div>
+            </div>
+            
+            <div class="sentiment">
+                <div id="lineleft"></div>
+                <div id="lineright"></div>
+                <table class="sentimenttable center">
+                    <tr>
+                        <td>
+                            <label class="radio" for="rating_{{=tweet['id']}}_positive">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_positive" value="{{=POSITIVE_RATING}}">    
+                              <br/>
+                              Positive
+                            </label>
+                        </td>
+                        <td>
+                            <label class="radio" for="rating_{{=tweet['id']}}_neutral">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_neutral" value="{{=NEUTRAL_RATING}}">
+                              <br/>
+                              Neutral
+                            </label>
+                        </td>
+                        <td>
+                            <label class="radio" for="rating_{{=tweet['id']}}_negative">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_negative" value="{{=NEGATIVE_RATING}}">
+                              <br/>
+                              Negative
+                            </label>
+                        </td>
+                        <td>
+                            <label class="radio" for="rating_{{=tweet['id']}}_skip">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_skip" value="{{=SKIP_RATING}}">
+                              <br/>
+                              Skip
+                            </label>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <input type="hidden" name="tweet_ids" value="{{=tweet['id']}}"/>
+        {{pass}}
+		
+            
+            <div class="center">
+                <input name="submit" type="submit" class="btn btn-success btn-large" value="Submit"/>
+            </div>
+        </form>
+	</div>
+  </body>
+</html>

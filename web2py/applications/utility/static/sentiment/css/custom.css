@@ -1,0 +1,82 @@
+.twitter-unit {
+	padding: 10px;
+	font-size: 16px;
+	font-weight: 200;
+	line-height: 30px;
+	color: inherit;
+	background-color: #eee;
+	-webkit-border-radius: 6px;
+	-moz-border-radius: 6px;
+	border-radius: 6px;
+    position: relative;
+}
+.twitter-unit p {
+    margin: 0;
+}
+
+.sentiment {
+	text-align: center;
+	margin: 5px 0 35px 0;
+    position: relative;
+}
+.content {
+	position:relative;
+	top:5px;
+	left:20px;
+	width: 700px;
+	margin-left: auto;
+	margin-right: auto;
+}
+.center {
+	text-align: center;
+	margin-left: auto;
+	margin-right: auto;
+}
+.sentimenttable {
+	width: 400px;
+}
+#lineleft{
+    position: absolute;
+	border-bottom: 2px #ccc solid;
+	width: 100px;
+	top: 11px;
+	left: 208px;
+    z-index: 0;
+}
+#lineright{
+    position: absolute;
+	border-bottom: 2px #ccc solid; 
+	width: 105px;
+	top: 11px;
+	left: 314px;
+    z-index: 0;
+}
+.payment {
+    width: 300px;
+    text-align: center;
+    margin: auto;
+    font-size: 1.5em;
+    line-height: 2em;
+    background: #C1DFC2;
+    border-radius: 3px;
+}
+
+.form-inline label.radio {
+    position: relative;
+}
+
+.form-inline label.radio input[type="radio"] {
+    position:absolute;
+    z-index: 100;
+    left: 50%;
+    margin-left: -6px;
+}
+
+.translate-link {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    margin-left: 5px;
+    font-size: 10px;
+    line-height: 12px;
+}
