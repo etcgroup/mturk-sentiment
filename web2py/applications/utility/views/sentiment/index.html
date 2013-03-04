@@ -25,8 +25,10 @@
         <div class="payment">
         {{if request.preview: }}
             Pays in bonus
+            {{response.disabledStr = 'disabled="disabled"'}}
         {{else:}}
             Pays ${{=request.price}} in bonus
+            {{response.disabledStr = ''}}
         {{pass}}
         </div>
         
@@ -43,7 +45,12 @@
         
 		<h3>Tweets</h3>
         
+        {{if request.preview:}}
+        <div class="form-inline">
+        {{else:}}
         <form class="form-inline" action="" method="post" enctype="multipart/form-data">
+        {{pass}}
+        
         {{for tweet in tweets:}}
             <div class="twitter-unit">
                 <p>{{=tweet['text']}}</p>
@@ -61,28 +68,28 @@
                     <tr>
                         <td>
                             <label class="radio" for="rating_{{=tweet['id']}}_positive">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_positive" value="{{=POSITIVE_RATING}}">    
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_positive" value="{{=POSITIVE_RATING}}" required {{=response.disabledStr}}>    
                               <br/>
                               Positive
                             </label>
                         </td>
                         <td>
                             <label class="radio" for="rating_{{=tweet['id']}}_neutral">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_neutral" value="{{=NEUTRAL_RATING}}">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_neutral" value="{{=NEUTRAL_RATING}}" required {{=response.disabledStr}}>
                               <br/>
                               Neutral
                             </label>
                         </td>
                         <td>
                             <label class="radio" for="rating_{{=tweet['id']}}_negative">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_negative" value="{{=NEGATIVE_RATING}}">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_negative" value="{{=NEGATIVE_RATING}}" required {{=response.disabledStr}}>
                               <br/>
                               Negative
                             </label>
                         </td>
                         <td>
                             <label class="radio" for="rating_{{=tweet['id']}}_skip">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_skip" value="{{=SKIP_RATING}}">
+                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_skip" value="{{=SKIP_RATING}}" {{=response.disabledStr}}>
                               <br/>
                               Skip
                             </label>
@@ -92,12 +99,14 @@
             </div>
             <input type="hidden" name="tweet_ids" value="{{=tweet['id']}}"/>
         {{pass}}
-		
+            <input type="hidden" name="start_time" value="{{=response.start_time}}"/>
             
             <div class="center">
-                <input name="submit" type="submit" class="btn btn-success btn-large" value="Submit"/>
+                <input name="submit" type="submit" class="btn btn-success btn-large" value="Submit" {{=response.disabledStr}}/>
             </div>
+        {{if not request.preview:}}
         </form>
+        {{pass}}
 	</div>
   </body>
 </html>

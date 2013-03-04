@@ -15,7 +15,7 @@ DESIRED_RATINGS = 3
 
 options.sentiment = {
     'price' : [0.01],
-    'mystery_task' : True
+    'mystery_task' : False
     }
 
 db.define_table('tweets',
@@ -79,7 +79,7 @@ def get_verification_tweet(workerid):
     
     query = db(where)
     query = query.select(db.tweets.ALL, db.ratings.worker_rating_count.max(), orderby=ordering, groupby=group)
-    print workerid
+    
     result = query.first().tweets
     return result.as_dict()
 
@@ -138,7 +138,9 @@ def record_tweet_rating(tweetId, rating):
     ass = request.assid
     ip = request.env.remote_addr
     condition = get_condition(request.condition)
-    duration = time.time() - session.start_time
+    duration = time.time() - float(request.post_vars.start_time)
+    
+    print 'recording',rating,'for',tweetId
     
     positiveIncrease = 1 if rating == POSITIVE_RATING else 0
     neutralIncrease = 1 if rating == NEUTRAL_RATING else 0
@@ -160,6 +162,7 @@ def record_tweet_rating(tweetId, rating):
     # if there is a true rating and it doesn't match, this is a strike
     strikeIncrease = 0
     if (trueRating != None) and (trueRating != rating):
+        print 'strike for worker',worker
         strikeIncrease = 1
     
     # if the worker has too many strikes, they are banned
@@ -205,7 +208,12 @@ def launch_test_sentiment_study(task='sentiment'):
     launch_sentiment_study(study_name, " ... test ...", task)
 
 def launch_sentiment_study(name, description, task='sentiment'):
-    hit_params = {'assignments': DESIRED_RATINGS}
+    hit_params = {
+        'assignments': DESIRED_RATINGS,
+        'title' : 'Rate Tweet Sentiment (BONUS)',
+        'description' : 'Rate the sentiment of tweets. Preview to see the task and how much it pays. All payments are in bonus.  You will be paid within minutes of finishing the HIT.',
+        'keywords' : 'tweets, sentiment, bonus',
+    }
     
     conditions = options[task]
     study = get_or_make_one(db.studies.name == name,
@@ -225,14 +233,21 @@ def launch_sentiment_study(name, description, task='sentiment'):
     tweets = query.as_list()
     
     group = []
+    hits_scheduled = 0
     for tweet in tweets:
         if len(group) == TWEETS_PER_HIT:
             schedule_hit(datetime.now(), study.id, task, {'tweets': group})
+            hits_scheduled += 1
             group = []
             
         group.append(tweet['id'])
+    
+    if len(group) > 0:
+        schedule_hit(datetime.now(), study.id, task, {'tweets': group})
+        hits_scheduled += 1
         
     db.commit()
+    print "Scheduled",hits_scheduled,"hits"
     
 def reset_sentiment_study():
     db.ratings.truncate('RESTART IDENTITY')

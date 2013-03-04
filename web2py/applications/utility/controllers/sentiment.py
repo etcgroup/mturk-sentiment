@@ -15,15 +15,12 @@ response.title = "Tweet Sentiment"
 
 def index():
 
-    if request.preview:
-        return dict(messages=messages)
-    
     error = None
     if request.post_vars.submit:
         error = process_ratings(request.post_vars)
     else:
-        session.start_time = time.time()
-        
+        response.start_time = time.time()
+
     # Get some tweets to rate
     tweets = get_tweets(request.workerid, TWEETS_PER_HIT, DESIRED_RATINGS)
     # randomize the tweet order
@@ -45,7 +42,7 @@ def process_ratings(post_vars):
             return "Invalid rating " + str(rating)
             
         ratings[tweetId] = rating
-        
+    
     for id,rating in ratings.iteritems():
         record_tweet_rating(id, rating)
         
