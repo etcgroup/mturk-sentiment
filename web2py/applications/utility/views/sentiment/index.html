@@ -98,6 +98,7 @@
                 </table>
             </div>
             <input type="hidden" name="tweet_ids" value="{{=tweet['id']}}"/>
+            <input type="hidden" name="{{=tweet['id']}}_verifies" value="{{= False if 'isverify' not in tweet else tweet['isverify']}}"/>
         {{pass}}
             <input type="hidden" name="start_time" value="{{=response.start_time}}"/>
             

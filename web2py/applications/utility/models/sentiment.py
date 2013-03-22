@@ -5,7 +5,7 @@ POSITIVE_RATING = 1
 SKIP_RATING = 12
 
 # The maximum number of mistakes on verification tweets before the worker is banned
-MAX_STRIKES = 3
+MAX_STRIKES = 5
 
 # how often (int HITs) to include a verification tweet in the rating set
 VERIFY_INTERVAL = 3
@@ -41,6 +41,7 @@ db.define_table('ratings',
                db.Field('rating', 'integer'),
                db.Field('skip', 'boolean', default=False),
                db.Field('isstrike', 'boolean'),
+               db.Field('isverify', 'boolean', default=False),
                migrate=migratep, fake_migrate=fake_migratep)
 
 db.define_table('workerstats',
@@ -75,13 +76,15 @@ def get_verification_tweet(workerid):
     where = workerCondition & extremeCondition & joinCondition
     
     # Get N tweets
-    ordering = db.ratings.worker_rating_count.max()
+    ordering = '<random>'
     
     query = db(where)
     query = query.select(db.tweets.ALL, db.ratings.worker_rating_count.max(), orderby=ordering, groupby=group)
     
     result = query.first().tweets
-    return result.as_dict()
+    tweet = result.as_dict()
+    tweet['isverify'] = True
+    return tweet
 
 def get_unrated_tweets(workerid, numTweets, desiredRatings):
     print 'resorting to unrated tweets...'
@@ -131,7 +134,7 @@ def get_tweets(workerid, numTweets, desiredRatings):
     return tweets
 
                 
-def record_tweet_rating(tweetId, rating):
+def record_tweet_rating(tweetId, rating, isVerify):
     study = request.study
     hit = request.hitid
     worker = request.workerid
@@ -162,7 +165,7 @@ def record_tweet_rating(tweetId, rating):
     # if there is a true rating and it doesn't match, this is a strike
     strikeIncrease = 0
     if (trueRating != None) and (trueRating != rating):
-        print 'strike for worker',worker
+        print '== strike for worker',worker
         strikeIncrease = 1
     
     # if the worker has too many strikes, they are banned
@@ -170,13 +173,16 @@ def record_tweet_rating(tweetId, rating):
     tweetRatingsIncrease = 1
     if workerstats.strikes + strikeIncrease >= MAX_STRIKES:
         workerBanned = True
-        block_worker(worker, "Sentiment ratings were too inconsistent")
+        # block_worker(worker, "Sentiment ratings were too inconsistent")
         
         # remove all their ratings from the ratings count for this tweet
         tweet.update_record(ratings=db.tweets.ratings - len(priorRatingsOfTweet))
     else:
         # add one to the ratings for this tweet
-        tweet.update_record(ratings=db.tweets.ratings + 1)
+        if isSkip:
+            tweet.update_record(skips=db.tweets.skips + 1)
+        else:
+            tweet.update_record(ratings=db.tweets.ratings + 1)
     
     
     # insert the rating record
@@ -192,7 +198,8 @@ def record_tweet_rating(tweetId, rating):
                       tweetid=tweet.tweetid,
                       rating=rating,
                       skip=isSkip,
-                      isstrike=strikeIncrease == 1)
+                      isstrike=strikeIncrease == 1,
+                      isverify=isVerify)
     
     # update the worker
     workerstats.update_record(ratings=db.workerstats.ratings + 1,

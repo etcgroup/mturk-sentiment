@@ -37,14 +37,14 @@ def process_ratings(post_vars):
             return "You must rate the sentiment of all of the tweets."
             
         rating = int(request.post_vars[tweetId])
-        
         if rating not in [NEGATIVE_RATING, NEUTRAL_RATING, POSITIVE_RATING, SKIP_RATING]:
             return "Invalid rating " + str(rating)
-            
+        
         ratings[tweetId] = rating
     
     for id,rating in ratings.iteritems():
-        record_tweet_rating(id, rating)
+        verifies = bool(request.post_vars["%s_verifies" % tweetId])
+        record_tweet_rating(id, rating, verifies)
         
     hit_finished()
     
