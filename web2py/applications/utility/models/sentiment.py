@@ -1,8 +1,11 @@
+import simplejson
+
 # Values for different ratings
 NEGATIVE_RATING = -1
 NEUTRAL_RATING = 0
 POSITIVE_RATING = 1
 SKIP_RATING = 12
+TWEET_BATCH_LIMIT = 200
 
 # The maximum number of mistakes on verification tweets before the worker is banned
 MAX_STRIKES = 5
@@ -24,6 +27,7 @@ db.define_table('tweets',
                db.Field('text', 'text'),
                db.Field('ratings', type='integer', default=0),
                db.Field('skips', type='integer', default=0),
+               db.Field('open_hits', type='integer', default=0),
                migrate=migratep, fake_migrate=fake_migratep)
 
 db.define_table('ratings',
@@ -232,12 +236,25 @@ def launch_sentiment_study(name, description, task='sentiment'):
                              'hit_params' : sj.dumps(hit_params, sort_keys=True)})
     study.update_record(conditions = sj.dumps(conditions, sort_keys=True))
     
+    # update the count of how many hits each tweet has open
+    update_tweet_open_hits(study.id)
+    
+    # get tweets that don't have open hits
+    noOpenHitsCondition = db.tweets.open_hits == 0
+    
     # get all the tweets that need rating
     ratingsCondition = db.tweets.ratings + db.tweets.skips < DESIRED_RATINGS
     
-    query = db(ratingsCondition)
-    query = query.select(db.tweets.id)
+    # get at most TWEET_BATCH_LIMIT tweets
+    limit = (0, TWEET_BATCH_LIMIT) if TWEET_BATCH_LIMIT > 0 else None
+    
+    query = db(ratingsCondition & noOpenHitsCondition)
+    query = query.select(db.tweets.id,limitby=limit)
     tweets = query.as_list()
+    
+    # count the total tweets remaining
+    query = db(ratingsCondition & noOpenHitsCondition)
+    remaining = query.count(db.tweets.id)
     
     group = []
     hits_scheduled = 0
@@ -254,7 +271,41 @@ def launch_sentiment_study(name, description, task='sentiment'):
         hits_scheduled += 1
         
     db.commit()
-    print "Scheduled",hits_scheduled,"hits"
+    
+    print "Scheduled",hits_scheduled,"hits for",len(tweets),"tweets,",remaining-len(tweets),"remaining."
+    
+def get_tweet_to_open_map(studyId):
+    
+    # un-closed hits
+    openCondition = (db.hits.status != 'closed') & (db.hits.status != 'launch canceled')
+    
+    # study match
+    studyCondition = db.hits.study == studyId
+    
+    query = db(openCondition & studyCondition)
+    query = query.select(db.hits.othervars)
+    hits = query.as_list()
+
+    tweetMap = dict()
+    for hit in hits:
+        other = simplejson.loads(hit['othervars'])
+        tweets = other['tweets']
+        
+        for tweetId in tweets:
+            if tweetId not in tweetMap:
+                tweetMap[tweetId] = 0
+            tweetMap[tweetId] += 1
+    
+    return tweetMap
+
+def update_tweet_open_hits(studyId):
+    
+    db(db.tweets).update(open_hits=0)
+    
+    tweetMap = get_tweet_to_open_map(studyId)
+    
+    for tweetId, hitCount in tweetMap.iteritems():
+        db(db.tweets.id == tweetId).update(open_hits=hitCount)
     
 def reset_sentiment_study():
     db.ratings.truncate('RESTART IDENTITY')
