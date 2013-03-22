@@ -43,7 +43,7 @@ def process_ratings(post_vars):
         ratings[tweetId] = rating
     
     for id,rating in ratings.iteritems():
-        verifies = bool(request.post_vars["%s_verifies" % tweetId])
+        verifies = request.post_vars["%s_verifies" % id] == 'True'
         record_tweet_rating(id, rating, verifies)
         
     hit_finished()

@@ -5,7 +5,7 @@ NEGATIVE_RATING = -1
 NEUTRAL_RATING = 0
 POSITIVE_RATING = 1
 SKIP_RATING = 12
-TWEET_BATCH_LIMIT = 200
+TWEET_BATCH_LIMIT = 1000
 
 # The maximum number of mistakes on verification tweets before the worker is banned
 MAX_STRIKES = 5
@@ -312,3 +312,54 @@ def reset_sentiment_study():
     db.workerstats.truncate('RESTART IDENTITY')
     db(db.tweets).update(ratings=0, skips=0)
     
+def get_hit_page(operation, page):
+    data = turk.ask_turk(operation, {'PageSize' : 100, \
+                            'PageNumber' : page,\
+                            'SortProperty' : 'Enumeration'})
+    print 'Getting page ' + str(page) + ' with '\
+          + turk.get(data, 'NumResults') + ' hits of '\
+          + turk.get(data,'TotalNumResults')
+    return turk.getsx(data,'HIT')
+    
+def get_all_hit_pages(operation):
+    results = []
+    i = 1
+    while True:
+        hits = get_hit_page(operation, i)
+        if len(hits) == 0:
+            break
+        results += hits
+        i = i+1
+    return results
+    
+def get_all_hit_objs ():
+    return get_all_hit_pages('SearchHITs')
+    
+def get_lost_hits():
+    import time
+    lost_hits = list()
+    all_hits = get_all_hit_objs()
+    
+    for hit_xml in all_hits:
+        status = turk.get(hit_xml, 'HITStatus')
+        
+        if status == 'Assignable':
+            hitid = turk.get(hit_xml, 'HITId')
+            
+            hit = db(db.hits.hitid == hitid).select().first()
+            if hit is None:
+                lost_hits.append(hitid)
+        
+    return lost_hits
+    
+def expire_lost_hits():
+    lost_hits = get_lost_hits()
+    bad_count = 0
+    print('Found %s lost hits...' % (len(lost_hits)))
+    for hitid in lost_hits:
+        try:
+            turk.expire_hit(hitid)
+        except Exception as e:
+            bad_count += 1
+            print e
+    print('FAILED to expire %d/%d hits!' % (bad_count, len(lost_hits)))
