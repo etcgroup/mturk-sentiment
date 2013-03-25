@@ -19,95 +19,109 @@
     </div>
     {{pass}}
     
+    {{if request.preview: }}
+        {{response.disabledStr = 'disabled="disabled"'}}
+    {{else:}}
+        {{response.disabledStr = ''}}
+    {{pass}}
+    
     <div class="content">
 		<h2 align="center">Twitter Sentiment Rating</h2>
 		
+        {{if price: }}
         <div class="payment">
-        {{if request.preview: }}
-            Pays in bonus
-            {{response.disabledStr = 'disabled="disabled"'}}
-        {{else:}}
-            Pays ${{=request.price}} in bonus
-            {{response.disabledStr = ''}}
-        {{pass}}
+            Pays ${{=price}} in bonus
         </div>
+        {{pass}}
         
-		<h3>Instructions</h3>
-		<p>Read each tweet below carefully and rate the overall sentiment, emotion, or feeling.</p>
-        <p>If the tweet is in an unfamiliar language, please try to use <a target="_blank" href="http://translate.google.com">Google Translate</a>.</p>
-        <p>If you are completely unsure whether the tweet is positive, neutral, or negative, you may skip it.</p>
-		<p>Your answers will be validated against your peers. 
-           If you skip too many tweets or do not answer consistently enough, you will be blocked.</p>
-		
+        {{if len(tweets) > 0:}}
+            <h3>Instructions</h3>
+            <ol>
+            <li><p>Carefully read each tweet below and rate the <strong>overall sentiment, emotion, or feeling</strong>.</p></li>
+            <li><p>If a tweet is in an unfamiliar language, please try to use <a target="_blank" href="http://translate.google.com">Google Translate</a>.</p></li>
+            <li><p>If you are completely unsure whether a tweet is positive, neutral, or negative, you may skip it.</p></li>
+            <li><p>Your answers will be validated against your peers. 
+               <strong>If you skip too many tweets or do not answer consistently enough, you will not be allowed to complete these HITs.</strong></p></li>
+            </ol>
+        {{pass}}
+        
+        {{if warning:}}
+            <div class="alert alert-danger">{{=warning}}</div>
+        {{pass}}
+        
         {{if error:}}
-            <div class="alert alert-danger">{{=error}}</div>
+            <div class="alert alert-error">
+                <h4>{{=error}}</h4>
+            </div>
         {{pass}}
         
-		<h3>Tweets</h3>
-        
-        {{if request.preview:}}
-        <div class="form-inline">
-        {{else:}}
-        <form class="form-inline" action="" method="post" enctype="multipart/form-data">
-        {{pass}}
-        
-        {{for tweet in tweets:}}
-            <div class="twitter-unit">
-                <p>{{=tweet['text']}}</p>
-                <div class="translate-link">
-                    <a target="mturk-hit-translate" href="http://translate.google.com/?source=osdd#auto|auto|{{=tweet['text']}}">
-                        Translate with Google Translate
-                    </a>
+        {{if len(tweets) > 0:}}
+            <h3>Tweets</h3>
+            
+            {{if request.preview:}}
+            <div class="form-inline">
+            {{else:}}
+            <form class="form-inline" action="" method="post" enctype="multipart/form-data">
+            {{pass}}
+            
+            {{for tweet in tweets:}}
+                <div class="twitter-unit">
+                    <p>{{=tweet['text']}}</p>
+                    <div class="translate-link">
+                        <a target="mturk-hit-translate" href="http://translate.google.com/?source=osdd#auto|auto|{{=tweet['text']}}">
+                            Translate with Google Translate
+                        </a>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="sentiment">
-                <div id="lineleft"></div>
-                <div id="lineright"></div>
-                <table class="sentimenttable center">
-                    <tr>
-                        <td>
-                            <label class="radio" for="rating_{{=tweet['id']}}_positive">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_positive" value="{{=POSITIVE_RATING}}" required {{=response.disabledStr}}>    
-                              <br/>
-                              Positive
-                            </label>
-                        </td>
-                        <td>
-                            <label class="radio" for="rating_{{=tweet['id']}}_neutral">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_neutral" value="{{=NEUTRAL_RATING}}" required {{=response.disabledStr}}>
-                              <br/>
-                              Neutral
-                            </label>
-                        </td>
-                        <td>
-                            <label class="radio" for="rating_{{=tweet['id']}}_negative">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_negative" value="{{=NEGATIVE_RATING}}" required {{=response.disabledStr}}>
-                              <br/>
-                              Negative
-                            </label>
-                        </td>
-                        <td>
-                            <label class="radio" for="rating_{{=tweet['id']}}_skip">
-                              <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_skip" value="{{=SKIP_RATING}}" {{=response.disabledStr}}>
-                              <br/>
-                              Skip
-                            </label>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-            <input type="hidden" name="tweet_ids" value="{{=tweet['id']}}"/>
-            <input type="hidden" name="{{=tweet['id']}}_verifies" value="{{= False if 'isverify' not in tweet else tweet['isverify']}}"/>
-        {{pass}}
-            <input type="hidden" name="start_time" value="{{=response.start_time}}"/>
-            
-            <div class="center">
-                <input name="submit" type="submit" class="btn btn-success btn-large" value="Submit" {{=response.disabledStr}}/>
-            </div>
-        {{if not request.preview:}}
-        </form>
-        {{pass}}
-	</div>
+                
+                <div class="sentiment">
+                    <div id="lineleft"></div>
+                    <div id="lineright"></div>
+                    <table class="sentimenttable center">
+                        <tr>
+                            <td>
+                                <label class="radio" for="rating_{{=tweet['id']}}_positive">
+                                  <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_positive" value="{{=POSITIVE_RATING}}" required {{=response.disabledStr}}>    
+                                  <br/>
+                                  Positive
+                                </label>
+                            </td>
+                            <td>
+                                <label class="radio" for="rating_{{=tweet['id']}}_neutral">
+                                  <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_neutral" value="{{=NEUTRAL_RATING}}" required {{=response.disabledStr}}>
+                                  <br/>
+                                  Neutral
+                                </label>
+                            </td>
+                            <td>
+                                <label class="radio" for="rating_{{=tweet['id']}}_negative">
+                                  <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_negative" value="{{=NEGATIVE_RATING}}" required {{=response.disabledStr}}>
+                                  <br/>
+                                  Negative
+                                </label>
+                            </td>
+                            <td>
+                                <label class="radio" for="rating_{{=tweet['id']}}_skip">
+                                  <input type="radio" name="{{=tweet['id']}}" id="rating_{{=tweet['id']}}_skip" value="{{=SKIP_RATING}}" {{=response.disabledStr}}>
+                                  <br/>
+                                  Skip
+                                </label>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <input type="hidden" name="tweet_ids" value="{{=tweet['id']}}"/>
+                <input type="hidden" name="{{=tweet['id']}}_verifies" value="{{= False if 'isverify' not in tweet else tweet['isverify']}}"/>
+            {{pass}}
+                <input type="hidden" name="start_time" value="{{=response.start_time}}"/>
+                
+                <div class="center">
+                    <input name="submit" type="submit" class="btn btn-success btn-large" value="Submit" {{=response.disabledStr}}/>
+                </div>
+            {{if not request.preview:}}
+            </form>
+            {{pass}}
+        </div>
+    {{pass}}
   </body>
 </html>

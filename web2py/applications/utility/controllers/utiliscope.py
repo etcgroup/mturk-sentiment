@@ -280,7 +280,7 @@ def paths():
     else:
         worker_id = None
     return dict(theme='black', study_id=study_id, worker_id=worker_id)
-
+    
 def worker_ids():
     study_id = request.args[0]
     results = db((db.actions.action == 'accept') & (db.actions.study == study_id)).select(db.actions.workerid, distinct=True)

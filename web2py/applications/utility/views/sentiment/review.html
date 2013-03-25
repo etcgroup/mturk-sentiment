@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Twitter Sentiment Rating Reviewer</title>
+    {{
+    response.files.append(URL('static','js/jquery.js'))
+    response.files.append(URL('static','sentiment/css/bootstrap.min.css'))
+    response.files.append(URL('static','sentiment/css/review.css'))
+    response.include_meta()
+    response.include_files()
+    }}
+  </head>
+  <body>
+
+<div id="reviewer" class="container">
+    <div class="row" style="margin-top: 20px;"><div class="span12">
+        <h1>Review Sentiment Ratings</h1>
+    </div></div>
+    
+    <div class="row"><div class="span12">
+        {{if prevWorkerIndex is not None:}}
+            <a class="btn" href="/utility/sentiment/review?page={{=prevWorkerIndex + 1}}">Prev Worker</a>
+        {{else:}}
+            <button class="btn" disabled="disabled">No previous workers</button>
+        {{pass}}
+        Reviewing worker #{{=workerIndex + 1}} of {{=workerCount}}.
+        {{if nextWorkerIndex is not None:}}
+            <a class="btn" href="/utility/sentiment/review?page={{=nextWorkerIndex + 1}}">Next Worker</a>
+        {{else:}}
+            <button class="btn" disabled="disabled">No next workers</button>
+        {{pass}}
+        <form class="form-inline" method="POST" style="display: inline-block; margin: 0"><input type="text" name="search" placeholder="search for workerid" /></form>
+    </div></div>
+    
+    {{if workerStats is not None:}}
+    <div class="row">
+        <div class="span12">
+            {{if workerStats.banned: }}
+            <p class="alert alert-danger clearfix" style="margin: 10px 0">
+                Worker ID: {{=workerStats.workerid}}
+                <a class="btn btn-success pull-right" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=0">Un-ban Worker</a>
+            </p>
+            {{else:}}
+            <p class="alert alert-success clearfix" style="margin: 10px 0">
+                Worker ID: {{=workerStats.workerid}}
+                <a class="btn btn-warning pull-right" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=1">Ban Worker</a>
+            </p>
+            {{pass}}
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="span4">
+            <p>
+            Ratings: {{=workerStats.ratings}}<br/>
+            Skips: {{=workerStats.skips}}
+            </p>
+        </div>
+        <div class="span4">
+            <p>
+            {{if workerStats.ratings > 0:}}
+                Positives: {{=workerStats.positives}} ({{="%2.0f" %(100*workerStats.positives/float(workerStats.ratings))}}%)<br/>
+                Neutrals: {{=workerStats.neutrals}} ({{="%2.0f" %(100*workerStats.neutrals/float(workerStats.ratings))}}%)<br/>
+                Negatives: {{=workerStats.negatives}} ({{="%2.0f" %(100*workerStats.negatives/float(workerStats.ratings))}}%)
+            {{pass}}
+            </p>
+        </div>
+        <div class="span4">
+            <p>
+            {{if workerStats.ratings > 0:}}
+            Strikes: {{=workerStats.strikes}}<br/>
+            /Ratings: {{="%f" %(workerStats.strikes / float(workerStats.ratings))}}
+            {{pass}}
+            </p>
+        </div>
+    </div>
+    {{pass}}
+    
+    {{if ratedTweets is not None:}}
+    <div class="row">
+        <div class="span12">
+            <table class="table table-striped table-bordered table-hover">
+                <thead><tr><th>:&nbsp;(</th><th>Rating</th><th>Others</th><th>Tweet</th><th>tid</th></thead>
+                <tbody>
+                    {{for rt in ratedTweets:}}
+                        {{if rt.isstrike:}}
+                        <tr class="error">
+                        {{elif rt.isverify:}}
+                        <tr class="success">
+                        {{else:}}
+                        <tr>
+                        {{pass}}
+                        
+                            <td>
+                            {{if (rt.rating is not None) and (rt.others[rt.rating] == 0):}}
+                                <span class="label label-warning" title="Nobody else chose this rating">&nbsp;</span>
+                            {{pass}}
+                            </td>
+                            
+                            <td>
+                            {{if rt.rating == 1:}}
+                                <span class="badge badge-info">Positive
+                            {{elif rt.rating == 0:}}
+                                <span class="badge">Neutral
+                            {{elif rt.rating == -1:}}
+                                <span class="badge badge-important">Negative
+                            {{pass}}
+                            </span></td>
+                            
+                            <td title="{{=len(rt.otherratings)}} TOTAL ratings by other workers">
+                                <div class="sentibucket">
+                                    <span title="{{=rt.others[-1]}} negative ratings by other workers" 
+                                          class="sentibar negative" 
+                                          data-count="{{=rt.others[-1]}}"></span>
+                                    <span title="{{=rt.others[0]}} neutral ratings by other workers"
+                                          class="sentibar neutral" 
+                                          data-count="{{=rt.others[0]}}"></span>
+                                    <span title="{{=rt.others[1]}} positive ratings by other workers"
+                                          class="sentibar positive"
+                                          data-count="{{=rt.others[1]}}"></span>
+                                </div>
+                            </td>
+                            
+                            <td>{{=rt.text}}</td>
+                            <td>{{=rt.tid}}</td>
+                        </tr>
+                    {{pass}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {{pass}}
+</div>
+
+<script>
+    $(document).ready(function() {
+        $('.sentibucket').each(function() {
+            var bars = $('.sentibar', this);
+            
+            var totalWidth = $(this).width()
+            
+            var total = 0;
+            var singles = 0;
+            bars.each(function() {
+                var $this = $(this);
+                var count = $this.data('count');
+                total += count;
+                if (count == 0) {
+                    singles++;
+                }
+            });
+            
+            if (total == 0) {
+                return;
+            }
+            
+            var opacity = 0.2;
+            switch (total) {
+                case 0:
+                    opacity = 0.2;
+                    break;
+                case 1:
+                    opacity = 0.6;
+                    break;
+                case 2:
+                default:
+                    opacity = 1.0;
+            }
+            
+            bars.each(function() {
+                var $this = $(this);
+                var count = $this.data('count');
+                
+                var percent = count / total;
+                if (percent == 0) {
+                    percent = "1px";
+                } else {
+                    percent = percent * (totalWidth - singles) + "px";
+                }
+                
+                $this.css({
+                    width: percent,
+                    opacity: opacity
+                });
+                
+            });
+        });
+    });
+</script>

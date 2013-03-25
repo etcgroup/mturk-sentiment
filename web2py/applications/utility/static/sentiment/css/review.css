@@ -1,0 +1,34 @@
+.table-hover tbody tr td.disagreement {
+    background: #FCFFAD;
+}
+.table-hover tbody tr:hover td.disagreement {
+    background: #FFF8AD;
+}
+
+.sentibucket {
+    position: relative;
+    width: 63px;
+    height: 18px;
+    
+    border: 1px solid #eee;
+}
+
+.sentibar {
+
+    height: 18px;
+    float: left;
+    min-width: 1px;
+    
+    opacity: 0.2;
+    filter:Alpha(opacity=20)
+}
+
+.sentibar.positive {
+    background-color: #3a87ad;
+}
+.sentibar.neutral {
+    background-color: #999999;
+}
+.sentibar.negative {
+    background-color: #b94a48;
+}
