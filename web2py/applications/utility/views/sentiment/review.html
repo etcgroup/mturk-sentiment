@@ -12,6 +12,64 @@
     }}
   </head>
   <body>
+<script>
+    var render = function() {
+        $('.sentibucket.unrendered').each(function() {
+            var bars = $('.sentibar', this);
+            
+            var totalWidth = $(this).width()
+            
+            var total = 0;
+            var singles = 0;
+            bars.each(function() {
+                var $this = $(this);
+                var count = $this.data('count');
+                total += count;
+                if (count == 0) {
+                    singles++;
+                }
+            });
+            
+            if (total == 0) {
+                return;
+            }
+            
+            var opacity = 0.2;
+            switch (total) {
+                case 0:
+                    opacity = 0.2;
+                    break;
+                case 1:
+                    opacity = 0.6;
+                    break;
+                case 2:
+                default:
+                    opacity = 1.0;
+            }
+            
+            bars.each(function() {
+                var $this = $(this);
+                var count = $this.data('count');
+                
+                var percent = count / total;
+                if (percent == 0) {
+                    percent = "1px";
+                } else {
+                    percent = percent * (totalWidth - singles) + "px";
+                }
+                
+                $this.css({
+                    width: percent,
+                    opacity: opacity
+                });
+                
+            });
+            
+            $(this).removeClass('unrendered');
+        });
+    }
+    setInterval(render, 5000);
+</script>
 
 <div id="reviewer" class="container">
     <div class="row" style="margin-top: 20px;"><div class="span12">
@@ -36,17 +94,24 @@
     {{if workerStats is not None:}}
     <div class="row">
         <div class="span12">
-            {{if workerStats.banned: }}
-            <p class="alert alert-danger clearfix" style="margin: 10px 0">
+            <p class="alert clearfix" style="margin: 10px 0">
                 Worker ID: {{=workerStats.workerid}}
-                <a class="btn btn-success pull-right" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=0">Un-ban Worker</a>
-            </p>
-            {{else:}}
-            <p class="alert alert-success clearfix" style="margin: 10px 0">
-                Worker ID: {{=workerStats.workerid}}
-                <a class="btn btn-warning pull-right" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=1">Ban Worker</a>
-            </p>
-            {{pass}}
+                {{if workerStats.banned:}}
+                    <span class="label label-important">auto banned</span>
+                {{else:}}
+                    <span class="label label-success">not auto banned</span>
+                {{pass}}
+                
+                {{if workerStats.banfinal != True:}}
+                    <a class="btn btn-danger" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=1">Manually Ban</a>
+                {{else:}}
+                    <button class="btn btn-danger" disabled="disabled">Manually Ban</button>
+                {{pass}}
+                {{if workerStats.banfinal != False:}}
+                    <a class="btn btn-success" href="/utility/sentiment/review?page={{=workerIndex + 1}}&ban=0">Manually Un-ban</a>
+                {{else:}}
+                    <button class="btn btn-success" disabled="disabled">Manually Un-Ban</button>
+                {{pass}}
         </div>
     </div>
     
@@ -109,7 +174,7 @@
                             </span></td>
                             
                             <td title="{{=len(rt.otherratings)}} TOTAL ratings by other workers">
-                                <div class="sentibucket">
+                                <div class="sentibucket unrendered">
                                     <span title="{{=rt.others[-1]}} negative ratings by other workers" 
                                           class="sentibar negative" 
                                           data-count="{{=rt.others[-1]}}"></span>
@@ -132,59 +197,3 @@
     </div>
     {{pass}}
 </div>
-
-<script>
-    $(document).ready(function() {
-        $('.sentibucket').each(function() {
-            var bars = $('.sentibar', this);
-            
-            var totalWidth = $(this).width()
-            
-            var total = 0;
-            var singles = 0;
-            bars.each(function() {
-                var $this = $(this);
-                var count = $this.data('count');
-                total += count;
-                if (count == 0) {
-                    singles++;
-                }
-            });
-            
-            if (total == 0) {
-                return;
-            }
-            
-            var opacity = 0.2;
-            switch (total) {
-                case 0:
-                    opacity = 0.2;
-                    break;
-                case 1:
-                    opacity = 0.6;
-                    break;
-                case 2:
-                default:
-                    opacity = 1.0;
-            }
-            
-            bars.each(function() {
-                var $this = $(this);
-                var count = $this.data('count');
-                
-                var percent = count / total;
-                if (percent == 0) {
-                    percent = "1px";
-                } else {
-                    percent = percent * (totalWidth - singles) + "px";
-                }
-                
-                $this.css({
-                    width: percent,
-                    opacity: opacity
-                });
-                
-            });
-        });
-    });
-</script>

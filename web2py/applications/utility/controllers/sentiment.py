@@ -72,7 +72,7 @@ def review():
     if workerStats is not None:
         if request.get_vars.ban is not None:
             banned = int(request.get_vars.ban)
-            workerStats.banned = banned == 1
+            workerStats.banfinal = (banned == 1)
             workerStats.update_record()
             redirect('/utility/sentiment/review?page=%s' %(workerIndex + 1))
             
@@ -85,7 +85,7 @@ def review():
             "LEFT JOIN workerstats AS ws ON other.workerid = ws.workerid "+\
             "WHERE r1.workerid = %s "+\
               "AND other.workerid != %s "+\
-              "AND (other.id IS NULL OR (other.rating IS NOT NULL AND ws.banned != 'T')) "+\
+              "AND (other.id IS NULL OR (other.rating IS NOT NULL AND ((ws.banned = 'F' AND (ws.banfinal = 'F' OR ws.banfinal IS NULL)) OR ws.banfinal = 'F'))) "+\
             "GROUP BY r1.id "+\
             "ORDER BY r1.worker_rating_count"
             # no null ratings, unless there are no others

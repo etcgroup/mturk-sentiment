@@ -1,16 +1,16 @@
-import simplejson
+import simplejson, random
 
 # Values for different ratings
 NEGATIVE_RATING = -1
 NEUTRAL_RATING = 0
 POSITIVE_RATING = 1
 SKIP_RATING = 12
-TWEET_BATCH_LIMIT = 30
+TWEET_BATCH_LIMIT = 12
 
 # The maximum number of mistakes on verification tweets before the worker is banned
 MAX_STRIKES = 13
 # The maximum ratio of strikes to total ratings before the worker is banned
-MAX_STRIKE_RATIO = 0.015
+MAX_STRIKE_RATIO = 0.02
 
 # WARNING_STRIKES = 10
 # WARNING_STRIKE_RATIO = 0.01
@@ -68,6 +68,7 @@ db.define_table('workerstats',
                 db.Field('skips', type='integer', default=0),
                 db.Field('strikes', type='integer', default=0),
                 db.Field('banned', type='boolean', default=False),
+                db.Field('banfinal', type='boolean'),
                 migrate=migratep, fake_migrate=fake_migratep)
                 
 def build_sentiment_indices():
@@ -115,8 +116,11 @@ def get_verification_tweet(workerid):
     query = db(where)
     query = query.select(db.tweets.ALL, db.ratings.worker_rating_count.max(), orderby=ordering, groupby=group)
     
-    result = query.first().tweets
-    tweet = result.as_dict()
+    result = query.first()
+    if result is None:
+        return None
+        
+    tweet = result.tweets.as_dict()
     tweet['isverify'] = True
     return tweet
 
@@ -153,9 +157,11 @@ def get_tweets(workerid, numTweets, desiredRatings):
     # Check if it is time for a verification tweet
     if hitNumber % VERIFY_INTERVAL == VERIFY_INTERVAL - 1:
         vertweet = get_verification_tweet(workerid)
-        print 'verifying with',vertweet['id'],vertweet['text']
-        tweets.append(vertweet)
-    
+        if vertweet is not None:
+            print 'verifying with',vertweet['id'],vertweet['text']
+            tweets.append(vertweet)
+        else:
+            print "NO VERIFICATION TWEETS FOR WORKER %s ??"%(workerid)
     # Now get the rest of the tweets
     if not request.live and ("tweets" not in request):
         tweets.extend(get_unrated_tweets(workerid, numTweets, desiredRatings))
@@ -173,11 +179,18 @@ def get_worker_level(workerid=None):
     
     workerstats = db(db.workerstats.workerid==workerid).select().first()
     if not workerstats:
-        return 'warning'
+        return 'good'
+    
+    # ban override
+    if workerstats.banfinal == False:
+        return 'good'
         
     strikeRatio = (workerstats.strikes) / (workerstats.ratings + 1.0)
     
     if (workerstats.strikes >= MAX_STRIKES) and (strikeRatio > MAX_STRIKE_RATIO):
+        if not workerstats.banned and not workerstats.banfinal:
+            print 'MARKING WORKER %s AS BANNED' %(workerstats.workerid)
+            workerstats.update_record(banned=True)
         return 'error'
     
     if (workerstats.strikes >= WARNING_STRIKES) and (strikeRatio > WARNING_STRIKE_RATIO):
@@ -185,38 +198,64 @@ def get_worker_level(workerid=None):
         
     return 'good'
 
-def unban_worker(reason="Reverse inappropriate ban", workerid=None):
-    if workerid is None:
-        workerid = request.workerid
-        
-    params = {'WorkerId' : workerid,
-              'Reason' : reason
-              }
-    turk.ask_turk('UnblockWorker', params)
+def update_worker_bans():
+    workers = db().select(db.workerstats.ALL)
+    workersChanged = 0
+    for worker in workers:
+        strikeRatio = (worker.strikes) / (worker.ratings + 1.0)
     
-    workerstats.update_record(banned=False)
+        banned = worker.banned
+        if (worker.strikes >= MAX_STRIKES) and (strikeRatio > MAX_STRIKE_RATIO):
+            banned = True
+        else:
+            banned = False
         
-def ban_worker(reason="Sentiment ratings were too inconsistent", workerid=None):
-    if workerid is None:
-        workerid = request.workerid
+        if banned != worker.banned:
+            print 'MARKING WORKER %s AS BANNED=%s' %(worker.workerid, banned)
+            worker.update_record(banned=banned)
+            workersChanged += 1
+    
+    db.commit()
+    
+    print 'Changed %s workers' %(workersChanged)
+    
+# def unban_worker(reason="Reverse inappropriate ban", workerid=None):
+    # if workerid is None:
+        # workerid = request.workerid
         
-    workerstats = db(db.workerstats.workerid==workerid).select().first()
+    # params = {'WorkerId' : workerid,
+              # 'Reason' : reason
+              # }
+    # turk.ask_turk('UnblockWorker', params)
     
-    turk.block_worker(workerid, reason)
-    print "== BLOCKING WORKER! %s with %s strikes, ratio %s",workerid,workerstats.strikes + strikeIncrease,strikeRatio
+    # workerstats.update_record(banned=False)
+        
+# def ban_worker(reason="Sentiment ratings were too inconsistent", workerid=None):
+    # if workerid is None:
+        # workerid = request.workerid
+        
+    # workerstats = db(db.workerstats.workerid==workerid).select().first()
     
-    workerstats.update_record(banned=True)
+    # turk.block_worker(workerid, reason)
+    # print "== BLOCKING WORKER! %s with %s strikes, ratio %s",workerid,workerstats.strikes + strikeIncrease,strikeRatio
+    
+    # workerstats.update_record(banned=True)
         
 def record_tweet_rating(tweetId, rating, isVerify):
+
+    print 'recording',rating,'for',tweetId
+    
     study = request.study
     hit = request.hitid
     worker = request.workerid
     ass = request.assid
     ip = request.env.remote_addr
+    print '  get condition'
     condition = get_condition(request.condition)
+    
+    print '  get duration'
     duration = time.time() - float(request.post_vars.start_time)
     
-    print 'recording',rating,'for',tweetId
     
     positiveIncrease = 1 if rating == POSITIVE_RATING else 0
     neutralIncrease = 1 if rating == NEUTRAL_RATING else 0
@@ -228,11 +267,16 @@ def record_tweet_rating(tweetId, rating, isVerify):
         rating = None
         
     # get the worker and tweet info
+    print '  get workerstats'
     workerstats = db(db.workerstats.workerid==worker).select().first()
+    print '  get tweet'
     tweet = db(db.tweets.id==tweetId).select().first()
     
     # Check if the tweet was rated before, in which case it is a quality check
+    print '  get prior ratings'
     priorRatingsOfTweet = db((db.ratings.tweet==tweetId) & (db.ratings.workerid == worker)).select(db.ratings.rating)
+    
+    print '  get true rating'
     trueRating = priorRatingsOfTweet.first().rating if len(priorRatingsOfTweet) > 0 else None
     
     # if there is a true rating and it doesn't match, this is a strike
@@ -243,12 +287,15 @@ def record_tweet_rating(tweetId, rating, isVerify):
     
     # add one to the ratings for this tweet
     if isSkip:
+        print '  update tweet skips + 1'
         tweet.update_record(skips=db.tweets.skips + 1)
     else:
+        print '  update tweet ratings + 1'
         tweet.update_record(ratings=db.tweets.ratings + 1)
 
     
     # insert the rating record
+    print '  insert rating'
     db.ratings.insert(study=study,
                       hitid=hit,
                       workerid=worker,
@@ -265,21 +312,24 @@ def record_tweet_rating(tweetId, rating, isVerify):
                       isverify=isVerify)
     
     # update the worker
+    print '  update worker'
     workerstats.update_record(ratings=db.workerstats.ratings + 1,
                             positives=db.workerstats.positives + positiveIncrease,
                             neutrals=db.workerstats.neutrals + neutralIncrease,
                             negatives=db.workerstats.negatives + negativeIncrease,
                             skips=db.workerstats.skips + skipIncrease,
                             strikes=db.workerstats.strikes + strikeIncrease)
+    print '  commit'
+    db.commit()
 
 def launch_test_sentiment_study(task='sentiment'):
-    study_name = 'teststudy %s' % task
+    study_name = 'teststudy %s 1' % task
     launch_sentiment_study(study_name, " ... test ...", task)
 
-def launch_sentiment_study(name, description, task='sentiment', studySpecific=False):
+def launch_sentiment_study(name, description, tweet_limit=None, task='sentiment', studySpecific=False):
     hit_params = {
         'assignments': DESIRED_RATINGS,
-        'title' : 'Rate Tweet Sentiment',
+        'title' : 'Rate Tweet Sentiment (BONUS)',
         'description' : 'Rate the sentiment of tweets. All payments are in bonus. You will be paid within minutes of finishing the HIT.',
         'keywords' : 'tweets, sentiment, bonus',
     }
@@ -307,11 +357,19 @@ def launch_sentiment_study(name, description, task='sentiment', studySpecific=Fa
     ratingsCondition = db.tweets.ratings + db.tweets.skips == 0
     
     # get at most TWEET_BATCH_LIMIT tweets
-    limit = (0, TWEET_BATCH_LIMIT) if TWEET_BATCH_LIMIT > 0 else None
+    batch_limit = min(tweet_limit, TWEET_BATCH_LIMIT)
+    if batch_limit > 0:
+        batch_limit = batch_limit - (batch_limit % TWEETS_PER_HIT)
+        limit = (0, batch_limit)
+    else:
+        limit = None
     
     query = db(ratingsCondition & noOpenHitsCondition)
     query = query.select(db.tweets.id,limitby=limit)
     tweets = query.as_list()
+    
+    #shuffle the tweets
+    random.shuffle(tweets)
     
     # count the total tweets remaining
     query = db(ratingsCondition & noOpenHitsCondition)
@@ -357,7 +415,10 @@ def get_needed_assignments_by_hit(excludeBanned=False, studyId=None):
 
     if excludeBanned:
         # no banned users
-        where = where & (db.workerstats.banned != True)
+        notBannedNotOverridden = (db.workerstats.banned == False) & ((db.workerstats.banfinal == False) | (db.workerstats.banfinal == None))
+        banOverridden = (db.workerstats.banfinal == False)
+        
+        where = where & (notBannedNotOverridden | banOverridden)
         
         # join to workers
         where = where & (db.workerstats.workerid == db.ratings.workerid)
@@ -372,6 +433,7 @@ def get_needed_assignments_by_hit(excludeBanned=False, studyId=None):
     query = query.select(db.ratings.tweet, hitid, count, groupby=group, having=having)
     
     needed = dict()
+    total_ratings = 0
     for row in query:
         hitid = row.hitid
         valid_ratings = row.valid_ratings
@@ -379,17 +441,25 @@ def get_needed_assignments_by_hit(excludeBanned=False, studyId=None):
         if hitid not in needed:
             needed[hitid] = 0
         needed[hitid] = max(needed[hitid], DESIRED_RATINGS - valid_ratings)
+        total_ratings += DESIRED_RATINGS - valid_ratings
+    
+    print "Need %s ratings on %s tweets" %(total_ratings, len(query))
     
     return needed
 
-def add_new_assignments(excludeBanned=False, studyId=None):
+def add_new_assignments(excludeBanned=False, studyId=None, limit=None):
     neededCounts = get_needed_assignments_by_hit(excludeBanned, studyId)
     
     totalAdded = 0
+    totalHits = 0
     for hitid, count in neededCounts.iteritems():
+        if limit is not None and totalAdded >= limit:
+            print 'Stopping due to limit'
+            break
+            
         data = turk.ask_turk('ExtendHIT', {
             'HITId' : hitid,
-            # 'MaxAssignmentsIncrement' : count,
+            'MaxAssignmentsIncrement' : count,
             'ExpirationIncrementInSeconds' : 86400 # one day
         })
         
@@ -397,10 +467,43 @@ def add_new_assignments(excludeBanned=False, studyId=None):
             print "Unable to increase HITs by %s on %s" %(count, hitid)
         
         db(db.hits.hitid == hitid).update(status='open')
+        db.commit()
         
         totalAdded += count
-        
-    print 'Added %s assignments to %s hits' %(totalAdded, len(neededCounts))
+        totalHits += 1
+    
+    print 'Added %s assignments to %s hits' %(totalAdded, totalHits)
+
+def force_refresh_hit_status():
+    import time
+    changed = list()
+    all_hits = get_all_hit_objs()
+    
+    for hit_xml in all_hits:
+        status = turk.get(hit_xml, 'HITStatus')
+        hitid = turk.get(hit_xml, 'HITId')
+            
+        hit = db(db.hits.hitid == hitid).select().first()
+        if hit is None:
+            print 'Lost hit id: %s' %(hitid)
+        else:
+            newstatus = hit.status
+            #log("refreshing %s %s" % (hitid, status))
+            if status == u'Assignable':
+                newstatus = 'open'
+            if status == u'Unassignable':
+                newstatus = 'getting done'
+            elif status == u'Reviewable' or status == u'Reviewing':
+                # Unassignable happens when someone is doing it now
+                # The only other option is Assignable
+                newstatus = 'closed'
+            if newstatus != hit.status:
+                changed.append(hitid)
+            record_hit_data(hitid=hitid, status=newstatus, xmlcache=hit_xml.toxml())
+            
+    print 'Changed status of %s hits!' %(len(changed))
+    return changed
+    
     
 def get_tweet_to_open_map(studyId=None):
     
@@ -437,6 +540,8 @@ def update_tweet_open_hits(studyId=None):
     
     for tweetId, hitCount in tweetMap.iteritems():
         db(db.tweets.id == tweetId).update(open_hits=hitCount)
+        
+    db.commit()
     
 def reset_sentiment_study():
     db.ratings.truncate('RESTART IDENTITY')
