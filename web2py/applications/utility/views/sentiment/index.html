@@ -54,6 +54,11 @@
                 <h4>{{=error}}</h4>
             </div>
         {{pass}}
+        {{if done_msg:}}
+        <div class="alert alert-success">
+            <h4>{{=done_msg}}</h4>
+        </div>
+        {{pass}}
         
         {{if len(tweets) > 0:}}
             <h3>Tweets</h3>

@@ -11,6 +11,12 @@ TWEET_BATCH_LIMIT = 12
 MAX_STRIKES = 13
 # The maximum ratio of strikes to total ratings before the worker is banned
 MAX_STRIKE_RATIO = 0.02
+# The maximum number of ratings a worker is allowed to provide
+MAX_RATINGS = 800
+
+# If the percent of tweets rated positive is over this value, the worker is invalid
+TOO_POSITIVE_PERCENT = 0.85
+TOO_POSITIVE_RATING_MINIMUM = 300
 
 # WARNING_STRIKES = 10
 # WARNING_STRIKE_RATIO = 0.01
@@ -124,6 +130,7 @@ def get_verification_tweet(workerid):
     tweet['isverify'] = True
     return tweet
 
+# This is no longer used except in the sandbox
 def get_unrated_tweets(workerid, numTweets, desiredRatings):
     print 'resorting to unrated tweets...'
     ordering = db.tweets.ratings
@@ -152,6 +159,7 @@ def get_tweets(workerid, numTweets, desiredRatings):
     workerstats = db(db.workerstats.workerid==workerid).select().first()
     if workerstats == None:
         id = db.workerstats.insert(workerid=workerid)
+        db.commit()
         workerstats = db(db.workerstats.id==id).select().first()
 
     # Check if it is time for a verification tweet
@@ -173,6 +181,7 @@ def get_tweets(workerid, numTweets, desiredRatings):
     print 'serving up',[t['id'] for t in tweets]
     return tweets
 
+    
 def get_worker_level(workerid=None):
     if workerid is None:
         workerid = request.workerid
@@ -180,6 +189,9 @@ def get_worker_level(workerid=None):
     workerstats = db(db.workerstats.workerid==workerid).select().first()
     if not workerstats:
         return 'good'
+    
+    if workerstats.ratings > MAX_RATINGS:
+        return 'done'
     
     # ban override
     if workerstats.banfinal == False:
@@ -191,29 +203,109 @@ def get_worker_level(workerid=None):
         if not workerstats.banned and not workerstats.banfinal:
             print 'MARKING WORKER %s AS BANNED' %(workerstats.workerid)
             workerstats.update_record(banned=True)
+            db.commit()
+        print ' == denying worker %s' %(workerid)
         return 'error'
     
     if (workerstats.strikes >= WARNING_STRIKES) and (strikeRatio > WARNING_STRIKE_RATIO):
+        print ' == warning worker %s' %(workerid)
         return 'warning'
+    
+    positivePercent = (workerstats.positives) / (workerstats.ratings + 1)
+    if (workerstats.ratings > TOO_POSITIVE_RATING_MINIMUM) and (positivePercent > TOO_POSITIVE_PERCENT):
+        if not workerstats.banned and not workerstats.banfinal:
+            print 'MARKING WORKER %s AS BANNED (too positive)' %(workerstats.workerid)
+            workerstats.update_record(banned=True)
+            db.commit()
+        print '== denying worker %s' %(workerid)
+        return 'error'
         
+    if (workerstats.ratings > TOO_POSITIVE_RATING_MINIMUM * 0.8) and (positivePercent > TOO_POSITIVE_PERCENT):
+        print ' == warning worker %s (too positive)' %(workerid)
+        return 'warning'
+    
     return 'good'
 
-def update_worker_bans():
-    workers = db().select(db.workerstats.ALL)
-    workersChanged = 0
-    for worker in workers:
-        strikeRatio = (worker.strikes) / (worker.ratings + 1.0)
+def update_worker_stats():
+    hasRatings = db.workerstats.ratings > 0
     
-        banned = worker.banned
-        if (worker.strikes >= MAX_STRIKES) and (strikeRatio > MAX_STRIKE_RATIO):
-            banned = True
-        else:
-            banned = False
+    workers = db(hasRatings).select()
+    workersChanged = 0
+    for workerstats in workers:
         
-        if banned != worker.banned:
-            print 'MARKING WORKER %s AS BANNED=%s' %(worker.workerid, banned)
-            worker.update_record(banned=banned)
+        ratings = 0
+        positives = 0
+        neutrals = 0
+        negatives = 0
+        skips = 0
+        strikes = 0
+        
+        forWorker = db.ratings.workerid == workerstats.workerid
+        allratings = db(forWorker).select(orderby=db.ratings.time)
+        
+        for rating in allratings:
+            ratings += 1
+            
+            if rating.skip:
+                skips += 1
+                
+            if rating.isstrike:
+                strikes += 1
+                
+            if rating.rating == POSITIVE_RATING:
+                positives += 1
+                
+            if rating.rating == NEUTRAL_RATING:
+                neutrals += 1
+                
+            if rating.rating == NEGATIVE_RATING:
+                negatives += 1
+                
+        if workerstats.ratings != ratings \
+            or workerstats.skips != skips \
+            or workerstats.strikes != strikes \
+            or workerstats.positives != positives \
+            or workerstats.neutrals != neutrals \
+            or workerstats.negatives != negatives:
+            
+            workerstats.ratings = ratings
+            workerstats.skips = skips
+            workerstats.strikes = strikes
+            workerstats.positives = positives
+            workerstats.neutrals = neutrals
+            workerstats.negatives = negatives
+            workerstats.update_record()
+            
             workersChanged += 1
+    
+    db.commit()
+    
+    print "Updated %d workers." %(workersChanged)
+    
+def update_worker_bans():
+    hasRatings = db.workerstats.ratings > 0
+    
+    workers = db(hasRatings).select()
+    workersChanged = 0
+    for workerstats in workers:
+        
+        banned = False
+        
+        strikeRatio = (workerstats.strikes) / (workerstats.ratings + 1.0)
+        if (workerstats.strikes >= MAX_STRIKES) and (strikeRatio > MAX_STRIKE_RATIO):
+            banned = True
+        
+        positivePercent = workerstats.positives / (workerstats.ratings + 1.0)
+        if (workerstats.ratings > TOO_POSITIVE_RATING_MINIMUM) and (positivePercent > TOO_POSITIVE_PERCENT):
+            banned = True
+    
+        if banned != workerstats.banned:
+            if workerstats.banfinal is not None and workerstats.banfinal != banned:
+                print 'SKIPPING WORKER %s WITH MANUAL BAN=%s, SUGGEST=%s' %(workerstats.workerid, workerstats.banfinal, banned)
+            else:
+                print 'MARKING WORKER %s AS BANNED=%s' %(workerstats.workerid, banned)
+                workerstats.update_record(banned=banned)
+                workersChanged += 1
     
     db.commit()
     
@@ -250,10 +342,7 @@ def record_tweet_rating(tweetId, rating, isVerify):
     worker = request.workerid
     ass = request.assid
     ip = request.env.remote_addr
-    print '  get condition'
     condition = get_condition(request.condition)
-    
-    print '  get duration'
     duration = time.time() - float(request.post_vars.start_time)
     
     
@@ -267,16 +356,11 @@ def record_tweet_rating(tweetId, rating, isVerify):
         rating = None
         
     # get the worker and tweet info
-    print '  get workerstats'
     workerstats = db(db.workerstats.workerid==worker).select().first()
-    print '  get tweet'
     tweet = db(db.tweets.id==tweetId).select().first()
     
     # Check if the tweet was rated before, in which case it is a quality check
-    print '  get prior ratings'
     priorRatingsOfTweet = db((db.ratings.tweet==tweetId) & (db.ratings.workerid == worker)).select(db.ratings.rating)
-    
-    print '  get true rating'
     trueRating = priorRatingsOfTweet.first().rating if len(priorRatingsOfTweet) > 0 else None
     
     # if there is a true rating and it doesn't match, this is a strike
@@ -287,15 +371,12 @@ def record_tweet_rating(tweetId, rating, isVerify):
     
     # add one to the ratings for this tweet
     if isSkip:
-        print '  update tweet skips + 1'
         tweet.update_record(skips=db.tweets.skips + 1)
     else:
-        print '  update tweet ratings + 1'
         tweet.update_record(ratings=db.tweets.ratings + 1)
 
     
     # insert the rating record
-    print '  insert rating'
     db.ratings.insert(study=study,
                       hitid=hit,
                       workerid=worker,
@@ -312,16 +393,15 @@ def record_tweet_rating(tweetId, rating, isVerify):
                       isverify=isVerify)
     
     # update the worker
-    print '  update worker'
     workerstats.update_record(ratings=db.workerstats.ratings + 1,
                             positives=db.workerstats.positives + positiveIncrease,
                             neutrals=db.workerstats.neutrals + neutralIncrease,
                             negatives=db.workerstats.negatives + negativeIncrease,
                             skips=db.workerstats.skips + skipIncrease,
                             strikes=db.workerstats.strikes + strikeIncrease)
-    print '  commit'
-    db.commit()
 
+    db.commit()
+    
 def launch_test_sentiment_study(task='sentiment'):
     study_name = 'teststudy %s 1' % task
     launch_sentiment_study(study_name, " ... test ...", task)
@@ -354,7 +434,7 @@ def launch_sentiment_study(name, description, tweet_limit=None, task='sentiment'
     noOpenHitsCondition = db.tweets.open_hits == 0
     
     # get all the tweets that are completely unrated
-    ratingsCondition = db.tweets.ratings + db.tweets.skips == 0
+    # ratingsCondition = db.tweets.ratings + db.tweets.skips == 0
     
     # get at most TWEET_BATCH_LIMIT tweets
     batch_limit = min(tweet_limit, TWEET_BATCH_LIMIT)
@@ -364,7 +444,7 @@ def launch_sentiment_study(name, description, tweet_limit=None, task='sentiment'
     else:
         limit = None
     
-    query = db(ratingsCondition & noOpenHitsCondition)
+    query = db(noOpenHitsCondition)
     query = query.select(db.tweets.id,limitby=limit)
     tweets = query.as_list()
     
@@ -372,7 +452,7 @@ def launch_sentiment_study(name, description, tweet_limit=None, task='sentiment'
     random.shuffle(tweets)
     
     # count the total tweets remaining
-    query = db(ratingsCondition & noOpenHitsCondition)
+    query = db(noOpenHitsCondition)
     remaining = query.count(db.tweets.id)
     
     group = []
@@ -443,8 +523,14 @@ def get_needed_assignments_by_hit(excludeBanned=False, studyId=None):
         needed[hitid] = max(needed[hitid], DESIRED_RATINGS - valid_ratings)
         total_ratings += DESIRED_RATINGS - valid_ratings
     
-    print "Need %s ratings on %s tweets" %(total_ratings, len(query))
-    
+    total_assignments = 0
+    for hitid, count in needed.iteritems():
+        total_assignments += count
+    total_cost = (LARGE_HIT_PRICE + 0.005) * total_assignments
+        
+    print "Need %s assignments to get %s ratings on %s tweets for max cost of $%0.3f" %(
+                total_assignments, total_ratings, len(query), total_cost)
+
     return needed
 
 def add_new_assignments(excludeBanned=False, studyId=None, limit=None):
@@ -474,6 +560,37 @@ def add_new_assignments(excludeBanned=False, studyId=None, limit=None):
     
     print 'Added %s assignments to %s hits' %(totalAdded, totalHits)
 
+# Remove ratings for the same assignment by the same worker
+def clean_duplicate_ratings():
+    group = db.ratings.workerid | db.ratings.assid | db.ratings.tweet
+    having = db.ratings.id.count() > 1
+    duped = db().select(db.ratings.workerid, db.ratings.assid, db.ratings.tweet, groupby=group, having=having)
+    
+    ratingsRemoved = 0
+    tweetAssignmentsAffected = 0
+    ratingCount = db(db.ratings.id > 0).count()
+    
+    for row in duped:
+        matchWorker = db.ratings.workerid == row.workerid
+        matchAssignment = db.ratings.assid == row.assid
+        matchTweet = db.ratings.tweet == row.tweet
+        order = db.ratings.time
+        ratings = db(matchWorker & matchAssignment & matchTweet).select(orderby=order)
+        skippedFirst = False
+        for rating in ratings:
+            if not skippedFirst:
+                skippedFirst = True
+                continue
+            
+            ratingsRemoved += 1
+            rating.delete_record()
+        
+        tweetAssignmentsAffected += 1
+    
+    db.commit()
+    
+    print "Removed %s out of all %s ratings, affecting %s worker-assignment-tweets" %(ratingsRemoved, ratingCount, tweetAssignmentsAffected)
+    
 def force_refresh_hit_status():
     import time
     changed = list()
@@ -511,7 +628,7 @@ def get_tweet_to_open_map(studyId=None):
     openCondition = (db.hits.status != 'closed') & (db.hits.status != 'launch canceled')
     
     # study match
-    if studyId is None:
+    if studyId is not None:
         studyCondition = db.hits.study == studyId
     else:
         studyCondition = db.hits.study == db.hits.study
@@ -599,3 +716,82 @@ def expire_lost_hits():
             bad_count += 1
             print e
     print('FAILED to expire %d/%d hits!' % (bad_count, len(lost_hits)))
+
+def expire_study_hits(studyId):
+    bad_count = 0
+    hits = db(db.hits.status.belongs(('open', 'getting done')) & (db.hits.study == studyId)).select()
+    for hit in hits:
+        try:
+            turk.expire_hit(hit.hitid)
+        except:
+            bad_count += 1
+    print('FAILED to expire %d/%d hits!' % (bad_count, len(hits)))
+
+def get_assignment(assid):
+    params = {'AssignmentId' : assid}
+    return turk.ask_turk('GetAssignment', params)
+
+def my_process_bonus_queue():
+    try:
+        for row in db().select(db.bonus_queue.ALL):
+            #debug_t('Processing bonus queue row %s' % row.id)
+            try:
+                my_approve_and_bonus_up_to(row.hitid, row.assid, row.worker, float(row.amount), row.reason)
+                debug_t('Success!  Deleting row.')
+                db(db.bonus_queue.assid == row.assid).delete()
+                if False:
+                    worker = db(db.workers.workerid == row.worker).select()[0]
+                    worker.update_record(bonus_paid=worker.bonus_paid + float(row.amount))
+                db.commit()
+            except TurkAPIError as e:
+                logger_t.error(str(e.value))
+    except KeyboardInterrupt:
+        debug_t('Quitting.')
+        db.rollback()
+        raise
+    except Exception as e:
+        logger_t.error('BAD EXCEPTION!!! How did this happen? letz rollback and die... ' + str(e))
+        try:
+            db.rollback()
+        except Exception as e:
+            logger_t.error('Got an exception handling even THAT exception: ' + str(e.value))
+        raise
+    
+def my_approve_and_bonus_up_to(hitid, assid, workerid, bonusamt, reason):
+    ass_status = turk.assignment_status(assid, hitid)
+    debug_t('Approving $%s ass %s of status %s' %
+            (bonusamt, assid, ass_status))
+
+    # if len(turk.get_assignments_for_hit(hitid)) == 0:
+        # raise TurkAPIError("...mturk hasn\'t updated their db yet")
+        
+
+    # First approve the assignment, but only if it's "submitted"
+    if ass_status == u'Submitted':
+        turk.approve_assignment(assid)
+
+#     if ass_status == None:
+#         log('The XML we are getting for this crapster is %s'
+#                       % turk.ask_turk_raw('GetAssignmentsForHIT', {'HITId' : hitid}))
+
+    if turk.assignment_status(assid, hitid) != u'Approved':
+        raise TurkAPIError('Trying to bonus a hit that isn\'t ready!  it is %s'
+                           % turk.assignment_status(assid, hitid))
+
+    #log('Now it must be approved.  doing bonus of $%s' % bonusamt)
+
+    # Now let's give it a bonus
+    if float(bonusamt) == 0.0:
+        #log('Oh... nm this is a 0.0 bonus')
+        pass
+    else:
+        turk.give_bonus_up_to(assid, workerid, float(bonusamt), reason)
+
+    # Update the assignment log and verify everything worked
+    update_ass_from_mturk(hitid)
+    if turk.assignment_status(assid, hitid) != u'Approved' \
+            or turk.bonus_total(assid) < float(bonusamt) - .001:
+        raise TurkAPIError('Bonus did\'t work! We have %s and %s<%s'
+                           % (turk.assignment_status(assid, hitid),
+                              turk.bonus_total(assid),
+                              float(bonusamt)))

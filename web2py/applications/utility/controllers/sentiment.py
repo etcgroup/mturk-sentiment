@@ -28,7 +28,10 @@ def index():
         error = "Your answers have been inconsistent. Please consider each tweet carefully, or you will be prevented from submitting more of these HITs."
     elif level == 'error':
         error = "Your answers have not been consistent enough. You are not able to submit more of these HITs."
-        return dict(error=error, price=None, tweets=[], warning=None)
+        return dict(error=error, warning=None, done_msg=None, price=None, tweets=[])
+    elif level == 'done':
+        done_msg = "That's all the work we have left for you to do. Thank you for your help!"
+        return dict(done_msg=done_msg, error=None, warning=None, price=None, tweets=[])
         
     # Get some tweets to rate
     tweets = get_tweets(request.workerid, TWEETS_PER_HIT, DESIRED_RATINGS)
@@ -39,7 +42,7 @@ def index():
     if len(tweets) < LARGE_HIT_THRESHOLD:
         bonus = SMALL_HIT_PRICE
     
-    return dict(tweets=tweets, error=error, warning=warning, price=bonus)
+    return dict(tweets=tweets, error=error, done_msg=None, warning=warning, price=bonus)
 
 def review():
     
@@ -48,13 +51,18 @@ def review():
         workerIndex = int(request.get_vars.page) - 1
     
     # find the worker
-    allWorkers = db(db.workerstats.workerid != None).select(db.workerstats.ALL, orderby=db.workerstats.id)
+    workerNotNull = db.workerstats.workerid != None
+    if request.get_vars.unrated is not None:
+        workerUnrated = (db.workerstats.banned == True) & (db.workerstats.banfinal == None)
+        allWorkers = db(workerNotNull & workerUnrated).select(db.workerstats.ALL, orderby=db.workerstats.id)
+    else:
+        allWorkers = db(workerNotNull).select(db.workerstats.ALL, orderby=db.workerstats.id)
     
     if request.post_vars.search is not None:
         searchWorkerId = request.post_vars.search
         for i in range(len(allWorkers)):
             if allWorkers[i].workerid == searchWorkerId:
-                redirect('/utility/sentiment/review?page=%s' %(i + 1))
+                redirect(mk_url(page=i+1))
     
     workerStats = None
     if workerIndex >= 0 and workerIndex < len(allWorkers):
@@ -74,7 +82,7 @@ def review():
             banned = int(request.get_vars.ban)
             workerStats.banfinal = (banned == 1)
             workerStats.update_record()
-            redirect('/utility/sentiment/review?page=%s' %(workerIndex + 1))
+            redirect(mk_url(page=workerIndex + 1))
             
         query = "SELECT MIN(t.text) AS text, MIN(t.id) AS tid, r1.rating, r1.isverify, r1.isstrike, "+\
                    "STRING_AGG(other.rating::text, ',' ORDER BY other.workerid) AS otherratings, "+\
@@ -128,10 +136,20 @@ def review():
     return dict(workerIndex=workerIndex, 
                 nextWorkerIndex=nextWorkerIndex, 
                 prevWorkerIndex=prevWorkerIndex,
+                unrated=request.get_vars.unrated,
+                mk_url=mk_url,
                 workerStats=workerStats, 
                 workerCount=len(allWorkers),
                 ratedTweets=ratedTweets)
 
+def mk_url(**kargs):
+    url = '/utility/sentiment/review?'
+    if request.get_vars.unrated is not None:
+        url += 'unrated=%s' %(request.get_vars.unrated)
+    for k, v in kargs.iteritems():
+        url += '&%s=%s' %(k, v)
+    return url
+                
 def process_ratings(post_vars):
 
     ratings = {}
